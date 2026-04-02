@@ -21,6 +21,54 @@ import { getRemittanceTools } from './tools/remittances.js';
 import { getServiceTools } from './tools/services.js';
 import { getWarehouseTools } from './tools/warehouses.js';
 
+/**
+ * Coerce arguments to match JSON schema types.
+ * LLM/MCP layer sometimes sends wrong types (string instead of integer/boolean/array).
+ */
+function coerceArguments(args: Record<string, unknown>, schema: { properties?: Record<string, { type?: string; items?: unknown }> }): Record<string, unknown> {
+  const props = schema?.properties || {};
+  const coerced: Record<string, unknown> = { ...args };
+
+  for (const [key, value] of Object.entries(coerced)) {
+    const prop = props[key];
+    if (!prop || !prop.type) continue;
+
+    if (prop.type === 'integer' && typeof value === 'string') {
+      const n = parseInt(value, 10);
+      if (!isNaN(n)) coerced[key] = n;
+    } else if (prop.type === 'integer' && typeof value === 'number') {
+      coerced[key] = Math.round(value);
+    } else if (prop.type === 'number' && typeof value === 'string') {
+      const n = parseFloat(value);
+      if (!isNaN(n)) coerced[key] = n;
+    } else if (prop.type === 'boolean' && typeof value === 'string') {
+      coerced[key] = ['true', '1', 'yes', 'si', 'sí'].includes(value.toLowerCase());
+    } else if (prop.type === 'boolean' && typeof value === 'number') {
+      coerced[key] = value !== 0;
+    } else if (prop.type === 'array' && typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        coerced[key] = Array.isArray(parsed) ? parsed : [value];
+      } catch {
+        coerced[key] = [value];
+      }
+    } else if (prop.type === 'array' && !Array.isArray(value)) {
+      coerced[key] = [value];
+    } else if (prop.type === 'object' && typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        if (typeof parsed === 'object' && parsed !== null) coerced[key] = parsed;
+      } catch {
+        // leave as-is
+      }
+    } else if (prop.type === 'string' && typeof value !== 'string') {
+      coerced[key] = String(value);
+    }
+  }
+
+  return coerced;
+}
+
 // Initialize multi-tenancy support
 const tenantConfigs = loadTenantConfigs();
 validateTenantConfigs(tenantConfigs);
@@ -183,8 +231,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     };
   }
 
+  // Coerce argument types based on tool's inputSchema (LLM sends strings for numbers/booleans/arrays)
+  const coercedArgs = coerceArguments(args || {}, tool.inputSchema);
+
   try {
-    const result = await tool.handler(args as never);
+    const result = await tool.handler(coercedArgs as never);
     return {
       content: [
         {
