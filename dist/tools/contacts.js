@@ -1,0 +1,276 @@
+import { contactIdSchema, contactAttachmentSchema, createContactSchema, updateContactSchema, withValidation, } from '../validation.js';
+export function getContactTools(client) {
+    return {
+        // List Contacts
+        list_contacts: {
+            description: 'List all contacts with optional filters for phone, mobile, or custom ID. Supports field filtering to reduce response size.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    page: {
+                        type: 'number',
+                        description: 'Page number for pagination (optional)',
+                    },
+                    limit: {
+                        type: 'number',
+                        description: 'Maximum number of items to return (default: 50, max: 500)',
+                    },
+                    summary: {
+                        type: 'boolean',
+                        description: 'Return only count and pagination metadata without items (default: false)',
+                    },
+                    phone: {
+                        type: 'string',
+                        description: 'Filter by exact phone number match',
+                    },
+                    mobile: {
+                        type: 'string',
+                        description: 'Filter by exact mobile number match',
+                    },
+                    customId: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Filter by custom ID(s)',
+                    },
+                    fields: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Select specific fields to return (e.g., ["id", "name", "email"]). Reduces response size by 70-90%. If not provided, returns default fields: id, customId, name, email',
+                    },
+                },
+                required: [],
+            },
+            readOnlyHint: true,
+            handler: async (args = {}) => {
+                const queryParams = {};
+                if (args.page)
+                    queryParams.page = args.page;
+                if (args.limit)
+                    queryParams.limit = Math.min(args.limit, 500);
+                if (args.phone)
+                    queryParams.phone = args.phone;
+                if (args.mobile)
+                    queryParams.mobile = args.mobile;
+                if (args.customId)
+                    queryParams['customId[]'] = args.customId.join(',');
+                const contacts = (await client.get('/contacts', queryParams));
+                // Virtual pagination: control context by returning only a window of data
+                const page = args.page ?? 1;
+                const limit = Math.min(args.limit ?? 50, 500);
+                // Field filtering: if fields specified, return only those fields
+                // Otherwise, return default minimal set
+                const defaultFields = ['id', 'customId', 'name', 'email'];
+                const fieldsToInclude = args.fields && args.fields.length > 0 ? args.fields : defaultFields;
+                const filtered = contacts.map((contact) => {
+                    const result = {};
+                    for (const field of fieldsToInclude) {
+                        if (field in contact) {
+                            result[field] = contact[field];
+                        }
+                    }
+                    return result;
+                });
+                // Calculate pagination window
+                const startIndex = (page - 1) * limit;
+                const endIndex = startIndex + limit;
+                const items = filtered.slice(startIndex, endIndex);
+                // Summary mode: return only count and metadata
+                if (args.summary) {
+                    return {
+                        count: filtered.length,
+                        totalPages: Math.ceil(filtered.length / limit),
+                        currentPage: page,
+                        hasMore: endIndex < filtered.length,
+                    };
+                }
+                return {
+                    items,
+                    page,
+                    pageSize: items.length,
+                    totalItems: filtered.length,
+                    totalPages: Math.ceil(filtered.length / limit),
+                    hasMore: endIndex < filtered.length,
+                };
+            },
+        },
+        // Create Contact
+        create_contact: {
+            description: 'Create a new contact',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    name: {
+                        type: 'string',
+                        description: 'Contact name',
+                    },
+                    email: {
+                        type: 'string',
+                        description: 'Contact email',
+                    },
+                    phone: {
+                        type: 'string',
+                        description: 'Contact phone number',
+                    },
+                    vatnumber: {
+                        type: 'string',
+                        description: 'VAT number / Tax ID',
+                    },
+                    type: {
+                        type: 'string',
+                        enum: ['client', 'supplier', 'lead', 'debtor', 'creditor'],
+                        description: 'Contact type',
+                    },
+                    billAddress: {
+                        type: 'object',
+                        description: 'Billing address',
+                        properties: {
+                            address: { type: 'string' },
+                            city: { type: 'string' },
+                            postalCode: { type: 'string' },
+                            province: { type: 'string' },
+                            country: { type: 'string' },
+                        },
+                    },
+                    tradename: {
+                        type: 'string',
+                        description: 'Trade name',
+                    },
+                    code: {
+                        type: 'string',
+                        description: 'Contact code',
+                    },
+                    note: {
+                        type: 'string',
+                        description: 'Notes about the contact',
+                    },
+                },
+                required: ['name'],
+            },
+            destructiveHint: true,
+            handler: withValidation(createContactSchema, async (args) => {
+                return client.post('/contacts', args);
+            }),
+        },
+        // Get Contact
+        get_contact: {
+            description: 'Get a specific contact by ID',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    contactId: {
+                        type: 'string',
+                        description: 'Contact ID',
+                    },
+                },
+                required: ['contactId'],
+            },
+            readOnlyHint: true,
+            handler: withValidation(contactIdSchema, async (args) => {
+                return client.get(`/contacts/${args.contactId}`);
+            }),
+        },
+        // Update Contact
+        update_contact: {
+            description: 'Update an existing contact',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    contactId: {
+                        type: 'string',
+                        description: 'Contact ID to update',
+                    },
+                    name: {
+                        type: 'string',
+                        description: 'Contact name',
+                    },
+                    email: {
+                        type: 'string',
+                        description: 'Contact email',
+                    },
+                    phone: {
+                        type: 'string',
+                        description: 'Contact phone number',
+                    },
+                    vatnumber: {
+                        type: 'string',
+                        description: 'VAT number / Tax ID',
+                    },
+                    type: {
+                        type: 'string',
+                        enum: ['client', 'supplier', 'lead', 'debtor', 'creditor'],
+                        description: 'Contact type',
+                    },
+                    billAddress: {
+                        type: 'object',
+                        description: 'Billing address',
+                    },
+                },
+                required: ['contactId'],
+            },
+            destructiveHint: true,
+            handler: withValidation(updateContactSchema, async (args) => {
+                const { contactId, ...body } = args;
+                return client.put(`/contacts/${contactId}`, body);
+            }),
+        },
+        // Delete Contact
+        delete_contact: {
+            description: 'Delete a contact',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    contactId: {
+                        type: 'string',
+                        description: 'Contact ID to delete',
+                    },
+                },
+                required: ['contactId'],
+            },
+            destructiveHint: true,
+            handler: withValidation(contactIdSchema, async (args) => {
+                return client.delete(`/contacts/${args.contactId}`);
+            }),
+        },
+        // Get Contact Attachments List
+        list_contact_attachments: {
+            description: 'Get list of attachments for a contact',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    contactId: {
+                        type: 'string',
+                        description: 'Contact ID',
+                    },
+                },
+                required: ['contactId'],
+            },
+            readOnlyHint: true,
+            handler: withValidation(contactIdSchema, async (args) => {
+                return client.get(`/contacts/${args.contactId}/attachments`);
+            }),
+        },
+        // Get Contact Attachment
+        get_contact_attachment: {
+            description: 'Get a specific attachment from a contact',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    contactId: {
+                        type: 'string',
+                        description: 'Contact ID',
+                    },
+                    attachmentId: {
+                        type: 'string',
+                        description: 'Attachment ID',
+                    },
+                },
+                required: ['contactId', 'attachmentId'],
+            },
+            readOnlyHint: true,
+            handler: withValidation(contactAttachmentSchema, async (args) => {
+                return client.get(`/contacts/${args.contactId}/attachments/${args.attachmentId}`);
+            }),
+        },
+    };
+}
+//# sourceMappingURL=contacts.js.map

@@ -1,0 +1,1 @@
+{"version":3,"file":"taxes.d.ts","sourceRoot":"","sources":["../../src/tools/taxes.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,YAAY,EAAE,MAAM,qBAAqB,CAAC;AAEnD,wBAAgB,WAAW,CAAC,MAAM,EAAE,YAAY;;;;;;;;;;;;;;;;;;;;;;;;;;;;;yBAgClC;YAAE,IAAI,CAAC,EAAE,MAAM,CAAC;YAAC,QAAQ,CAAC,EAAE,MAAM,CAAC;YAAC,OAAO,CAAC,EAAE,OAAO,CAAC;YAAC,MAAM,CAAC,EAAE,MAAM,EAAE,CAAA;SAAE;;;;;;;;;;;;;;EA8CvF"}

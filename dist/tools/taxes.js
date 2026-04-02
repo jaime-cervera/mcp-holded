@@ -1,0 +1,71 @@
+export function getTaxTools(client) {
+    return {
+        // Get Taxes
+        get_taxes: {
+            description: 'Get all available taxes with pagination support. Supports field filtering to reduce response size.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    page: {
+                        type: 'number',
+                        description: 'Page number (starting from 1, default: 1)',
+                    },
+                    pageSize: {
+                        type: 'number',
+                        description: 'Number of items per page (default: 50, max: 500)',
+                    },
+                    summary: {
+                        type: 'boolean',
+                        description: 'Return only total count and page count without items (default: false)',
+                    },
+                    fields: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Select specific fields to return (e.g., ["id", "name", "percentage"]). Reduces response size by 70-90%. If not provided, returns default fields: id, name, percentage',
+                    },
+                },
+                required: [],
+            },
+            readOnlyHint: true,
+            handler: async (args = {}) => {
+                const taxes = (await client.get('/taxes'));
+                // Field filtering: if fields specified, return only those fields
+                // Otherwise, return default minimal set
+                const defaultFields = ['id', 'name', 'percentage'];
+                const fieldsToInclude = args.fields && args.fields.length > 0 ? args.fields : defaultFields;
+                const filtered = taxes.map((tax) => {
+                    const result = {};
+                    for (const field of fieldsToInclude) {
+                        if (field in tax) {
+                            result[field] = tax[field];
+                        }
+                    }
+                    return result;
+                });
+                // Pagination
+                const page = Math.max(args.page ?? 1, 1);
+                const pageSize = Math.min(args.pageSize ?? 50, 500);
+                const total = filtered.length;
+                const totalPages = Math.ceil(total / pageSize);
+                const startIndex = (page - 1) * pageSize;
+                const endIndex = startIndex + pageSize;
+                const items = filtered.slice(startIndex, endIndex);
+                // Summary mode: return only metadata
+                if (args.summary) {
+                    return {
+                        total,
+                        totalPages,
+                    };
+                }
+                return {
+                    items,
+                    page,
+                    pageSize,
+                    total,
+                    totalPages,
+                };
+            },
+        },
+    };
+}
+//# sourceMappingURL=taxes.js.map
