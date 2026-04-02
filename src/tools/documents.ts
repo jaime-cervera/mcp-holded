@@ -472,10 +472,20 @@ export function getDocumentTools(client: HoldedClient) {
         required: ['docType', 'documentId', 'emails'],
       },
       destructiveHint: true,
-      handler: withValidation(sendDocumentSchema, async (args) => {
-        const { docType, documentId, ...body } = args;
+      handler: async (args: Record<string, unknown>) => {
+        // Coerce emails: string -> array (LLM sometimes sends single string)
+        if (typeof args.emails === 'string') {
+          try {
+            const parsed = JSON.parse(args.emails);
+            args.emails = Array.isArray(parsed) ? parsed : [args.emails];
+          } catch {
+            args.emails = [args.emails];
+          }
+        }
+        const validated = sendDocumentSchema.parse(args);
+        const { docType, documentId, ...body } = validated;
         return client.post(`/documents/${docType}/${documentId}/send`, body);
-      }),
+      },
     },
 
     // Get Document PDF

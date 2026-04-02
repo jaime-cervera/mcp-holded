@@ -277,7 +277,7 @@ export declare function getDocumentTools(client: HoldedClient): {
             required: string[];
         };
         destructiveHint: boolean;
-        handler: (args: unknown) => Promise<unknown>;
+        handler: (args: Record<string, unknown>) => Promise<unknown>;
     };
     get_document_pdf: {
         description: string;
