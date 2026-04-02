@@ -232,12 +232,20 @@ export function getDocumentTools(client: HoldedClient) {
             type: 'string',
             description: 'Currency code (e.g., EUR, USD)',
           },
+          approveDoc: {
+            type: 'boolean',
+            description: 'If true, the document is approved/locked after creation. Required for Verifactu compliance. Default: true for invoices.',
+          },
         },
         required: ['docType', 'contactId', 'items'],
       },
       destructiveHint: true,
       handler: withValidation(createDocumentSchema, async (args) => {
         const { docType, ...body } = args;
+        // Default approveDoc to true for invoices (Verifactu compliance)
+        if (body.approveDoc === undefined && docType === 'invoice') {
+          body.approveDoc = true;
+        }
         return client.post(`/documents/${docType}`, body);
       }),
     },
@@ -320,6 +328,10 @@ export function getDocumentTools(client: HoldedClient) {
           notes: {
             type: 'string',
             description: 'Notes for the document',
+          },
+          approveDoc: {
+            type: 'boolean',
+            description: 'If true, the document is approved/locked after update. Required for Verifactu compliance.',
           },
         },
         required: ['docType', 'documentId'],

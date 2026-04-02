@@ -191,6 +191,7 @@ export const createDocumentSchema = z.object({
   date: z.string().optional(),
   notes: z.string().optional(),
   currency: z.string().optional(),
+  approveDoc: z.boolean().optional(),
 });
 
 export const updateDocumentSchema = documentIdSchema.merge(
@@ -200,6 +201,7 @@ export const updateDocumentSchema = documentIdSchema.merge(
     date: z.string().optional(),
     notes: z.string().optional(),
     currency: z.string().optional(),
+    approveDoc: z.boolean().optional(),
   })
 );
 
