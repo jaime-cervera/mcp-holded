@@ -106,6 +106,14 @@ export declare function getDocumentTools(client: HoldedClient): {
                             };
                             tax: {
                                 type: string;
+                                description: string;
+                            };
+                            taxes: {
+                                type: string;
+                                items: {
+                                    type: string;
+                                };
+                                description: string;
                             };
                         };
                     };

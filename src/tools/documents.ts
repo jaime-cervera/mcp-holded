@@ -12,6 +12,47 @@ import {
   withValidation,
 } from '../validation.js';
 
+// ── Tax auto-defaults for Spanish autónomos ──
+// Holded ignores numeric tax/retention fields — ONLY the `taxes` array works.
+// These defaults apply to sales invoices (docType=invoice) when items have no taxes array.
+// Override via environment variables or pass explicit taxes in items to skip auto-defaults.
+const DEFAULT_IVA_KEY = process.env.HOLDED_DEFAULT_IVA || 's_iva_21';  // IVA 21%
+const DEFAULT_RETENTION_KEY = process.env.HOLDED_DEFAULT_RETENTION || 's_ret_7'; // IRPF 7% (nuevo autónomo)
+const DEFAULT_PAYMENT_METHOD_ID = process.env.HOLDED_DEFAULT_PAYMENT_METHOD_ID || '';
+const DEFAULT_DUE_DAYS = parseInt(process.env.HOLDED_DEFAULT_DUE_DAYS || '30', 10);
+
+/**
+ * Apply fiscal auto-defaults to invoice items.
+ * Rules:
+ * - If an item already has a non-empty `taxes` array → leave it untouched (explicit override)
+ * - If an item has tax=0 explicitly AND no taxes array → still apply defaults (the LLM likely forgot)
+ * - For sales invoices: add IVA + IRPF retention by default
+ * - For purchases: do NOT auto-add (purchases have different tax logic)
+ */
+function applyTaxDefaults(items: any[], docType: string): any[] {
+  // Only apply to sales invoices
+  const salesTypes = ['invoice', 'salesreceipt', 'proform', 'estimate', 'salesorder'];
+  if (!salesTypes.includes(docType)) return items;
+
+  return items.map((item: any) => {
+    // If item already has explicit taxes array with entries, respect it
+    if (Array.isArray(item.taxes) && item.taxes.length > 0) {
+      return item;
+    }
+
+    // Auto-apply IVA + retention
+    const taxes: string[] = [];
+    if (DEFAULT_IVA_KEY) taxes.push(DEFAULT_IVA_KEY);
+    if (DEFAULT_RETENTION_KEY) taxes.push(DEFAULT_RETENTION_KEY);
+
+    if (taxes.length > 0) {
+      console.error(`[auto-default] Adding taxes ${JSON.stringify(taxes)} to item "${item.name || 'unnamed'}"`);
+      return { ...item, taxes };
+    }
+    return item;
+  });
+}
+
 // Document types supported by Holded
 export type DocumentType =
   | 'invoice'
@@ -209,14 +250,19 @@ export function getDocumentTools(client: HoldedClient) {
           },
           items: {
             type: 'array',
-            description: 'Array of line items',
+            description: 'Array of line items. IMPORTANT: For sales invoices, IVA 21% and IRPF retention are auto-applied via the taxes array if not explicitly provided. To override, pass a taxes array in each item (e.g. taxes: ["s_iva21"] for IVA only, taxes: ["s_iva21", "s_irpf15"] for different retention). The numeric tax field is IGNORED by Holded — only the taxes array works.',
             items: {
               type: 'object',
               properties: {
                 name: { type: 'string' },
                 units: { type: 'number' },
                 subtotal: { type: 'number' },
-                tax: { type: 'number' },
+                tax: { type: 'number', description: 'IGNORED by Holded API. Use taxes array instead.' },
+                taxes: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Tax keys to apply. Common: s_iva_21 (IVA 21%), s_iva_10 (10%), s_iva_4 (4%), s_ret_7 (IRPF 7%), s_ret_15 (IRPF 15%). Auto-defaults to [s_iva_21, s_ret_7] for sales invoices if not provided.',
+                },
               },
             },
           },
@@ -241,11 +287,34 @@ export function getDocumentTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(createDocumentSchema, async (args) => {
-        const { docType, ...body } = args;
+        const { docType, ...rest } = args;
+        const body: Record<string, any> = { ...rest };
+
         // Default approveDoc to true for invoices (Verifactu compliance)
         if (body.approveDoc === undefined && docType === 'invoice') {
           body.approveDoc = true;
         }
+
+        // ── Auto-default taxes (IVA + IRPF) for sales invoices ──
+        // Holded ignores numeric tax/retention fields; only the taxes array works.
+        // This prevents invoices from being created without IVA when the LLM forgets.
+        if (body.items && Array.isArray(body.items)) {
+          body.items = applyTaxDefaults(body.items, docType);
+        }
+
+        // ── Auto-default dueDate (30 days from now) ──
+        if (!body.dueDate) {
+          const dueDateTs = Math.floor(Date.now() / 1000) + (DEFAULT_DUE_DAYS * 86400);
+          body.dueDate = dueDateTs;
+          console.error(`[auto-default] Setting dueDate to ${DEFAULT_DUE_DAYS} days from now`);
+        }
+
+        // ── Auto-default paymentMethodId (bank transfer) ──
+        if (!body.paymentMethodId && DEFAULT_PAYMENT_METHOD_ID) {
+          body.paymentMethodId = DEFAULT_PAYMENT_METHOD_ID;
+          console.error(`[auto-default] Setting paymentMethodId to ${DEFAULT_PAYMENT_METHOD_ID}`);
+        }
+
         return client.post(`/documents/${docType}`, body);
       }),
     },
